@@ -1,7 +1,7 @@
 // src/api/api.ts
 import axios from "axios";
 
-const API_URL = "http://connect4_backend:8000";
+const API_URL = "http://localhost:8000";
 
 export const api = {
     createGame: (config: any) =>
