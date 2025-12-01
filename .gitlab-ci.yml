@@ -56,8 +56,6 @@ tag_hash:
     IMAGE_HASH: $IMAGE_NAME:${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}
   before_script:
     - |
-      echo "User: '$DOCKER_HUB_USERNAME'"
-      echo "Token length: ${#DOCKER_HUB_ACCESS_TOKEN}"
       echo "$DOCKER_HUB_ACCESS_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
 
   script:
@@ -66,5 +64,5 @@ tag_hash:
       docker push $IMAGE_HASH
 
   rules:
-    - if: '$CI_COMMIT_BRANCH'
+    - if: $CI_COMMIT_BRANCH == "main"
       when: manual
