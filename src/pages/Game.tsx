@@ -1,21 +1,32 @@
-// src/pages/Game.tsx (updated)
-import { useParams } from "react-router-dom";
-import {CircularProgress, Typography} from "@mui/material";
+// src/pages/Game.tsx
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { CircularProgress, Typography, Button } from "@mui/material";
 import { useEffect, useState } from "react";
 
 import { useGame } from "../hooks/useGame";
 import Board from "../components/Board";
 import GameInfo from "../components/GameInfo";
 import GameOverModal from "../components/GameOverModal";
-import { api } from "../api/api";
 
 export default function GamePage() {
     const { id } = useParams();
-    const { state, makeMove } = useGame(id!);
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { state, makeMove, setInitialState } = useGame(id || null);
 
     const [gameOver, setGameOver] = useState(false);
-    const [history, setHistory] = useState<any[]>([]);
     const [endTime, setEndTime] = useState<number | null>(null);
+
+    // Initialize state from navigation if available - ONLY ONCE
+    useEffect(() => {
+        const navigationState = location.state as { initialGameState?: any };
+        if (navigationState?.initialGameState && !state) {
+            // Only set if we don't have state yet
+            console.log("Setting initial state from navigation");
+            setInitialState?.(navigationState.initialGameState);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Empty deps - only run once on mount
 
     // Update body class based on current player
     useEffect(() => {
@@ -34,31 +45,32 @@ export default function GamePage() {
         };
     }, [state]);
 
-    // Fetch history + detect game end
+    // Detect game end
     useEffect(() => {
         if (!state) return;
-
-        api.getHistory(id!).then(setHistory);
 
         if (state.status === "win" || state.status === "draw") {
             setGameOver(true);
             setEndTime(prev => prev ?? Date.now());
         }
-    }, [state, id]);
+    }, [state]);
 
     const elapsed =
-        state && endTime
+        state && endTime && state.created_at
             ? (endTime - new Date(state.created_at).getTime()) / 1000
             : 0;
 
     const restartGame = () => {
-        window.location.href = "/";
+        navigate("/");
     };
 
     if (!state) {
         return (
             <div className="game-container">
                 <CircularProgress className="enhanced-spinner" size={60} />
+                <Typography sx={{ mt: 2 }}>
+                    Loading game...
+                </Typography>
             </div>
         );
     }
@@ -72,16 +84,25 @@ export default function GamePage() {
             </div>
 
             <GameInfo state={state} />
-            <Board board={state.board} onColumnClick={makeMove} />
+            <Board
+                board={state.board}
+                onColumnClick={makeMove}
+            />
 
             <GameOverModal
                 open={gameOver}
                 winner={state.winner}
                 elapsedSeconds={elapsed}
-                moves={history}
+                moves={[]} // History not available from backend
                 onClose={() => setGameOver(false)}
                 onRestart={restartGame}
             />
+
+            {state.config.player2_type === "cpu" && state.current_player === "player2" && state.status === "in_progress" && (
+                <Typography sx={{ mt: 2, textAlign: "center", fontStyle: "italic" }}>
+                    ⏳ Waiting for AI move... (AI service must be running)
+                </Typography>
+            )}
         </div>
     );
 }

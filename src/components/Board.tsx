@@ -1,4 +1,4 @@
-// src/components/Board.tsx (updated)
+// src/components/Board.tsx
 import { Box } from "@mui/material";
 import Cell from "./Cell";
 import { useState, useEffect } from "react";
@@ -6,9 +6,10 @@ import { useState, useEffect } from "react";
 interface Props {
     board: string[][];
     onColumnClick: (col: number) => void;
+    disabled?: boolean;
 }
 
-export default function Board({ board, onColumnClick }: Props) {
+export default function Board({ board, onColumnClick, disabled = false }: Props) {
     const [isShaking, setIsShaking] = useState(false);
 
     useEffect(() => {
@@ -19,6 +20,8 @@ export default function Board({ board, onColumnClick }: Props) {
     }, [isShaking]);
 
     const handleColumnClick = (col: number) => {
+        if (disabled) return;
+
         setIsShaking(true);
         onColumnClick(col);
     };
@@ -28,17 +31,18 @@ export default function Board({ board, onColumnClick }: Props) {
             <Box
                 sx={{
                     display: "grid",
-                    gridTemplateColumns: `repeat(${board[0].length}, 70px)`,
+                    gridTemplateColumns: `repeat(${board[0]?.length || 7}, 70px)`,
                     gap: "8px",
                 }}
             >
-                {board[0].map((_, col) => (
+                {board[0]?.map((_, col) => (
                     <Box
                         key={`col-${col}`}
                         sx={{
                             display: "flex",
                             flexDirection: "column",
-                            cursor: "pointer",
+                            cursor: disabled ? "not-allowed" : "pointer",
+                            opacity: disabled ? 0.6 : 1,
                         }}
                         onClick={() => handleColumnClick(col)}
                     >

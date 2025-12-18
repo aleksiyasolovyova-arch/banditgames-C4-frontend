@@ -1,4 +1,4 @@
-// src/pages/Home.tsx (updated)
+// src/pages/Home.tsx
 import { useState } from "react";
 import {
     Button,
@@ -8,20 +8,34 @@ import {
     MenuItem,
 } from "@mui/material";
 
-import { api } from "../api/api";
 import { useNavigate } from "react-router-dom";
+import { api } from "../api/api";
 
 export default function Home() {
-    const [mode, setMode] = useState("cpu");
+    const [mode, setMode] = useState<"cpu" | "human">("cpu");
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
     const startGame = async () => {
-        const config = {
-            player2_type: mode === "cpu" ? "cpu" : "human",
-        };
+        setLoading(true);
+        try {
+            const config = {
+                player2_type: mode,
+            };
 
-        const state = await api.createGame(config);
-        navigate(`/game/${state.game_id}`);
+            // Create game directly
+            const backendResponse = await api.createGame(config);
+
+            // Pass the initial game state via navigation state
+            navigate(`/game/${backendResponse.id}`, {
+                state: { initialGameState: backendResponse }
+            });
+        } catch (error) {
+            console.error("Error creating game:", error);
+            alert("Failed to create game. Please try again.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -37,11 +51,12 @@ export default function Home() {
                 <FormControl fullWidth sx={{ my: 3 }}>
                     <Select
                         value={mode}
-                        onChange={e => setMode(e.target.value)}
+                        onChange={e => setMode(e.target.value as "cpu" | "human")}
                         className="enhanced-select"
+                        disabled={loading}
                     >
                         <MenuItem value="cpu">Player vs CPU</MenuItem>
-                        <MenuItem value="pvp">Player vs Player</MenuItem>
+                        <MenuItem value="human">Player vs Player</MenuItem>
                     </Select>
                 </FormControl>
 
@@ -50,8 +65,9 @@ export default function Home() {
                     onClick={startGame}
                     className="enhanced-button"
                     fullWidth
+                    disabled={loading}
                 >
-                    Start Game
+                    {loading ? "Creating Game..." : "Start Game"}
                 </Button>
             </div>
         </div>
