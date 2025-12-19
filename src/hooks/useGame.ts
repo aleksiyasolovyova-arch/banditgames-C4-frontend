@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api } from "../api/api";
 
 interface GameState {
@@ -20,19 +20,9 @@ interface GameState {
 function mapBackendToFrontend(backendResponse: any): GameState {
     console.log("Mapping backend response:", JSON.stringify(backendResponse, null, 2));
 
-    // Determine current player based on currentPlayer.id
     const isPlayer1 = backendResponse.currentPlayer.id === backendResponse.playerOne.id;
     const current_player = isPlayer1 ? "player1" : "player2";
 
-    console.log("Current player:", {
-        currentPlayerId: backendResponse.currentPlayer.id,
-        playerOneId: backendResponse.playerOne.id,
-        playerTwoId: backendResponse.playerTwo.id,
-        isPlayer1,
-        current_player
-    });
-
-    // Map phase to status
     let status: "in_progress" | "win" | "draw";
     if (backendResponse.phase === "FINISHED") {
         status = backendResponse.winner ? "win" : "draw";
@@ -40,10 +30,8 @@ function mapBackendToFrontend(backendResponse: any): GameState {
         status = "in_progress";
     }
 
-    // Determine player2 type (if name is "CPU" then it's CPU)
     const player2_type = backendResponse.playerTwo.name === "CPU" ? "cpu" : "human";
 
-    // Determine winner
     let winner: string | null = null;
     if (backendResponse.winner) {
         winner = backendResponse.winner.id === backendResponse.playerOne.id ? "player1" : "player2";
@@ -71,6 +59,7 @@ function mapBackendToFrontend(backendResponse: any): GameState {
 export function useGame(gameId: string | null) {
     const [state, setState] = useState<GameState | null>(null);
     const moveStartTimeRef = useRef<number | null>(null);
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Set initial state from navigation
     const setInitialState = (backendResponse: any) => {
@@ -78,6 +67,58 @@ export function useGame(gameId: string | null) {
         setState(mappedState);
         moveStartTimeRef.current = Date.now();
     };
+
+    // ========================================
+    // POLLING: Check for AI moves
+    // ========================================
+    useEffect(() => {
+        if (!state || !gameId) return;
+
+        // Only poll if:
+        // 1. Game is vs CPU
+        // 2. It's CPU's turn
+        // 3. Game is in progress
+        const shouldPoll =
+            state.config.player2_type === "cpu" &&
+            state.current_player === "player2" &&
+            state.status === "in_progress";
+
+        if (shouldPoll) {
+            console.log("🔄 Starting to poll for AI move...");
+
+            // Poll every 500ms
+            pollingIntervalRef.current = setInterval(async () => {
+                try {
+                    console.log("📡 Polling game state...");
+                    const backendResponse = await api.getGame(gameId);
+                    const mappedState = mapBackendToFrontend(backendResponse);
+
+                    // Check if turn changed (AI moved)
+                    if (mappedState.current_player !== state.current_player ||
+                        mappedState.moveCount !== state.moveCount) {
+                        console.log("✅ AI move detected! Updating state...");
+                        setState(mappedState);
+                        moveStartTimeRef.current = Date.now();
+
+                        // Stop polling after AI moves
+                        if (pollingIntervalRef.current) {
+                            clearInterval(pollingIntervalRef.current);
+                            pollingIntervalRef.current = null;
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error polling game state:", error);
+                }
+            }, 500); // Poll every 500ms
+
+            return () => {
+                if (pollingIntervalRef.current) {
+                    clearInterval(pollingIntervalRef.current);
+                    pollingIntervalRef.current = null;
+                }
+            };
+        }
+    }, [state, gameId]);
 
     const makeMove = async (col: number) => {
         if (!state) {
@@ -94,33 +135,20 @@ export function useGame(gameId: string | null) {
         console.log(`⏱️ Player thinking time: ${thinkingTimeMs}ms (${(thinkingTimeMs / 1000).toFixed(2)}s)`);
 
         try {
-            // Get current player ID from state
-            console.log("Getting playerId for current_player:", state.current_player);
-            console.log("playerOne:", state.playerOne);
-            console.log("playerTwo:", state.playerTwo);
-
             const playerId = state.current_player === "player1"
                 ? state.playerOne?.id
                 : state.playerTwo?.id;
 
-            console.log("Selected playerId:", playerId);
-
             if (!playerId) {
                 console.error("❌ Cannot determine player ID!");
-                console.error("current_player:", state.current_player);
-                console.error("playerOne:", state.playerOne);
-                console.error("playerTwo:", state.playerTwo);
                 return;
             }
 
-            // FIXED: Pass playerId as the third parameter, not thinkingTimeMs
             const backendResponse = await api.makeMove(state.game_id, col, playerId);
             console.log("Backend returned:", backendResponse);
 
             const mappedState = mapBackendToFrontend(backendResponse);
-            console.log("About to set state to:", mappedState);
             setState(mappedState);
-            console.log("State has been set!");
 
             // Reset timer for next move
             if (mappedState.status === "in_progress") {
@@ -128,7 +156,6 @@ export function useGame(gameId: string | null) {
             }
         } catch (error) {
             console.error("Error making move:", error);
-            // Log the full error details
             if (error.response) {
                 console.error("Error response data:", error.response.data);
                 console.error("Error response status:", error.response.status);
