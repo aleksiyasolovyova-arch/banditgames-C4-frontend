@@ -1,18 +1,19 @@
 // src/pages/Game.tsx
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { CircularProgress, Typography, Button } from "@mui/material";
+import { CircularProgress, Typography, Button, Alert } from "@mui/material";
 import { useEffect, useState } from "react";
 
 import { useGame } from "../hooks/useGame";
 import Board from "../components/Board";
 import GameInfo from "../components/GameInfo";
 import GameOverModal from "../components/GameOverModal";
+import MoveSuggestionDisplay from "../components/MoveSuggestion";
 
 export default function GamePage() {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const { state, makeMove, setInitialState } = useGame(id || null);
+    const { state, makeMove, setInitialState, mlSuggestion, mlAvailable } = useGame(id || null);
 
     const [gameOver, setGameOver] = useState(false);
     const [endTime, setEndTime] = useState<number | null>(null);
@@ -81,9 +82,34 @@ export default function GamePage() {
                 <Typography variant="h1" className="game-title">
                     Connect 4
                 </Typography>
+
+                {/* ML API Status Indicator */}
+                {!mlAvailable && (
+                    <Alert
+                        severity="info"
+                        sx={{ mt: 2, maxWidth: 600, mx: 'auto' }}
+                    >
+                        💡 ML API not available - move suggestions disabled.
+                        Start the ML API at localhost:8001 to enable AI analysis.
+                    </Alert>
+                )}
             </div>
 
             <GameInfo state={state} />
+
+            {/* ML Move Suggestion Display */}
+            {mlAvailable && mlSuggestion.playerColor && (
+                <div style={{ maxWidth: 600, margin: '0 auto' }}>
+                    <MoveSuggestionDisplay
+                        lastMove={mlSuggestion.lastMove}
+                        suggestedMove={mlSuggestion.suggestedMove}
+                        topMoves={mlSuggestion.topMoves}
+                        isLoading={mlSuggestion.isLoading}
+                        playerColor={mlSuggestion.playerColor}
+                    />
+                </div>
+            )}
+
             <Board
                 board={state.board}
                 onColumnClick={makeMove}
@@ -93,7 +119,7 @@ export default function GamePage() {
                 open={gameOver}
                 winner={state.winner}
                 elapsedSeconds={elapsed}
-                moves={[]} // History not available from backend
+                moveCount={state.moveCount || 0}
                 onClose={() => setGameOver(false)}
                 onRestart={restartGame}
             />
