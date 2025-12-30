@@ -8,9 +8,6 @@ interface GameState {
     current_player: "player1" | "player2";
     status: "in_progress" | "win" | "draw";
     winner: string | null;
-    config: {
-        player2_type: "cpu" | "human";
-    };
     created_at?: string;
     playerOne?: { id: string; name: string };
     playerTwo?: { id: string; name: string };
@@ -44,8 +41,6 @@ function mapBackendToFrontend(backendResponse: any): GameState {
         status = "in_progress";
     }
 
-    const player2_type = backendResponse.playerTwo.name === "CPU" ? "cpu" : "human";
-
     let winner: string | null = null;
     if (backendResponse.winner) {
         winner = backendResponse.winner.id === backendResponse.playerOne.id ? "player1" : "player2";
@@ -57,9 +52,6 @@ function mapBackendToFrontend(backendResponse: any): GameState {
         current_player,
         status,
         winner,
-        config: {
-            player2_type
-        },
         created_at: backendResponse.createdAt,
         playerOne: backendResponse.playerOne,
         playerTwo: backendResponse.playerTwo,
@@ -72,6 +64,9 @@ function mapBackendToFrontend(backendResponse: any): GameState {
 
 export function useGame(gameId: string | null) {
     const [state, setState] = useState<GameState | null>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [gameExists, setGameExists] = useState<boolean>(false);
+
     const [mlSuggestion, setMlSuggestion] = useState<MLSuggestionState>({
         lastMove: null,
         suggestedMove: null,
@@ -84,9 +79,7 @@ export function useGame(gameId: string | null) {
     const moveStartTimeRef = useRef<number | null>(null);
     const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    // ========================================
-    // ML API HEALTH CHECK ON MOUNT
-    // ========================================
+
     useEffect(() => {
         console.log('🔍 [useGame] Checking ML API health on mount...');
 
@@ -109,15 +102,80 @@ export function useGame(gameId: string | null) {
             });
     }, []);
 
-    // Set initial state from navigation
-    const setInitialState = (backendResponse: any) => {
-        const mappedState = mapBackendToFrontend(backendResponse);
-        setState(mappedState);
-        moveStartTimeRef.current = Date.now();
+    // ========================================
+    // FETCH GAME STATE
+    // ========================================
+    const fetchGame = async () => {
+        if (!gameId) {
+            setLoading(false);
+            setGameExists(false);
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const data = await api.getGame(gameId);
+            setState(mapBackendToFrontend(data));
+            setGameExists(true);
+            moveStartTimeRef.current = Date.now();
+        } catch (error: any) {
+            if (error.response && error.response.status === 404) {
+                console.log("Game not found - needs to be created");
+                setGameExists(false);
+                setState(null);
+            } else {
+                console.error("Error fetching game:", error);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // INITIAL FETCH AND POLLING
+    useEffect(() => {
+        fetchGame();
+
+        // Poll for game updates every 2 seconds
+        const interval = setInterval(() => {
+            if (gameExists && gameId) {
+                api.getGame(gameId)
+                    .then(data => {
+                        const newState = mapBackendToFrontend(data);
+                        // Only update if move count changed (prevents jitter)
+                        setState(prev => {
+                            if (!prev || newState.moveCount !== prev.moveCount || newState.status !== prev.status) {
+                                return newState;
+                            }
+                            return prev;
+                        });
+                    })
+                    .catch(err => console.error("Polling error:", err));
+            }
+        }, 2000);
+
+        return () => clearInterval(interval);
+    }, [gameId, gameExists]);
+
+    // CREATE GAME FUNCTION
+    const createGame = async (gameId: string, player1Id: string, player2Id: string) => {
+        console.log("Creating game:", { gameId, player1Id, player2Id });
+
+        try {
+            const backendResponse = await api.createGame(gameId, player1Id, player2Id);
+            console.log("Game created:", backendResponse);
+
+            const mappedState = mapBackendToFrontend(backendResponse);
+            setState(mappedState);
+            setGameExists(true);
+            moveStartTimeRef.current = Date.now();
+        } catch (error) {
+            console.error("Error creating game:", error);
+            throw error;
+        }
     };
 
     // ========================================
-    // ML SUGGESTION: Get suggestion after human move
+    // ML SUGGESTION: Get suggestion after ANY move
     // ========================================
     const getSuggestionForMove = async (
         currentBoard: string[][],
@@ -140,7 +198,7 @@ export function useGame(gameId: string | null) {
                 }
             }
         }
-        console.log(' [getSuggestionForMove] Pieces on board:', pieceCount);
+        console.log('📊 [getSuggestionForMove] Pieces on board:', pieceCount);
 
         if (!mlAvailable) {
             console.log('️ [getSuggestionForMove] ML API not available, skipping suggestion');
@@ -179,58 +237,8 @@ export function useGame(gameId: string | null) {
         }
     };
 
-    // ========================================
-    // POLLING: Check for AI moves
-    // ========================================
-    useEffect(() => {
-        if (!state || !gameId) return;
 
-        // Only poll if:
-        // 1. Game is vs CPU
-        // 2. It's CPU's turn
-        // 3. Game is in progress
-        const shouldPoll =
-            state.config.player2_type === "cpu" &&
-            state.current_player === "player2" &&
-            state.status === "in_progress";
-
-        if (shouldPoll) {
-            console.log("🔄 Starting to poll for AI move...");
-
-            // Poll every 500ms
-            pollingIntervalRef.current = setInterval(async () => {
-                try {
-                    console.log(" Polling game state...");
-                    const backendResponse = await api.getGame(gameId);
-                    const mappedState = mapBackendToFrontend(backendResponse);
-
-                    // Check if turn changed (AI moved)
-                    if (mappedState.current_player !== state.current_player ||
-                        mappedState.moveCount !== state.moveCount) {
-                        console.log(" AI move detected! Updating state...");
-                        setState(mappedState);
-                        moveStartTimeRef.current = Date.now();
-
-                        // Stop polling after AI moves
-                        if (pollingIntervalRef.current) {
-                            clearInterval(pollingIntervalRef.current);
-                            pollingIntervalRef.current = null;
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error polling game state:", error);
-                }
-            }, 500); // Poll every 500ms
-
-            return () => {
-                if (pollingIntervalRef.current) {
-                    clearInterval(pollingIntervalRef.current);
-                    pollingIntervalRef.current = null;
-                }
-            };
-        }
-    }, [state, gameId]);
-
+    // MAKE MOVE
     const makeMove = async (col: number) => {
         if (!state) {
             console.error("Cannot make move: no game state");
@@ -245,21 +253,13 @@ export function useGame(gameId: string | null) {
 
         console.log(` Player thinking time: ${thinkingTimeMs}ms (${(thinkingTimeMs / 1000).toFixed(2)}s)`);
 
-        // ========================================
         // SAVE INFO ABOUT WHO IS MAKING THE MOVE
-        // ========================================
         const playerMakingMove = state.current_player;
         const columnPlayed = col;
-        const isHumanMove = (
-            (playerMakingMove === 'player1') ||
-            (playerMakingMove === 'player2' && state.config.player2_type === 'human')
-        );
 
-        console.log('🔍 [makeMove] Move details:', {
+        console.log(' [makeMove] Move details:', {
             column: col,
             playerMakingMove,
-            isHumanMove,
-            player2Type: state.config.player2_type,
             mlAvailable
         });
 
@@ -277,35 +277,31 @@ export function useGame(gameId: string | null) {
             console.log("Backend returned:", backendResponse);
 
             const boardFromBackend = backendResponse.board.grid;
-
             console.log(' [makeMove] Board from backend (bottom row):', boardFromBackend[5]);
 
             const mappedState = mapBackendToFrontend(backendResponse);
             setState(mappedState);
 
-            // ========================================
-            // GET ML SUGGESTION FOR HUMAN MOVES
-            // ========================================
+
+            // GET ML SUGGESTION FOR ALL MOVES
+
             console.log(' [makeMove] Checking if should get ML suggestion:', {
-                isHumanMove,
                 newStatus: mappedState.status,
                 mlAvailable,
                 playerMakingMove
             });
 
-            if (isHumanMove && mappedState.status === "in_progress") {
-                console.log(' [makeMove] Conditions met! Calling getSuggestionForMove...');
+            if (mappedState.status === "in_progress" && mlAvailable) {
+                console.log(' [makeMove] Getting ML suggestion...');
 
-                // Use boardFromBackend (extracted directly from API response)
-                // This guarantees we're using the updated board with the piece just placed
+                // Use boardFromBackend (direct from API response)
                 await getSuggestionForMove(
-                    boardFromBackend,  // ← Direct from backend, bypasses any state issues!
+                    boardFromBackend,
                     playerMakingMove,
                     columnPlayed
                 );
             } else {
                 console.log(' [makeMove] NOT getting ML suggestion because:', {
-                    isHumanMove: isHumanMove ? 'YES' : 'NO (not human player)',
                     status: mappedState.status === "in_progress" ? 'in_progress' : mappedState.status,
                     mlAvailable: mlAvailable ? 'YES' : 'NO (ML API not available)'
                 });
@@ -327,8 +323,10 @@ export function useGame(gameId: string | null) {
 
     return {
         state,
+        loading,
+        gameExists,
+        createGame,
         makeMove,
-        setInitialState,
         mlSuggestion,
         mlAvailable
     };

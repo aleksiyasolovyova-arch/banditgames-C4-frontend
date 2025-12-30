@@ -93,7 +93,7 @@ function getLegalMoves(board: any[][]): number[] {
     console.log(' [mlApi] Legal moves:', legalMoves);
 
     if (legalMoves.length === 0) {
-        console.warn('️ [mlApi] No legal moves found! Board might be full.');
+        console.warn(' [mlApi] No legal moves found! Board might be full.');
     }
 
     return legalMoves;
@@ -179,14 +179,14 @@ export const mlApi = {
 
             if (error.response) {
                 // Server responded with error
-                console.error(' [mlApi] Server error response:', {
+                console.error('️ [mlApi] Server error response:', {
                     status: error.response.status,
                     statusText: error.response.statusText,
                     data: error.response.data
                 });
             } else if (error.request) {
                 // Request sent but no response
-                console.error(' [mlApi] No response received:', {
+                console.error('[mlApi] No response received:', {
                     message: 'Request was sent but no response was received',
                     url: ML_API_URL
                 });
@@ -205,8 +205,8 @@ export const mlApi = {
      * @returns true if API is healthy and model is loaded, false otherwise
      */
     async checkHealth(): Promise<boolean> {
-        console.log(' [mlApi.checkHealth] START');
-        console.log(' [mlApi] Checking:', `${ML_API_URL}/health`);
+        console.log('🔍 [mlApi.checkHealth] START');
+        console.log('🌐 [mlApi] Checking:', `${ML_API_URL}/health`);
 
         try {
             const response = await axios.get(`${ML_API_URL}/health`, {
@@ -220,7 +220,7 @@ export const mlApi = {
                 response.data.model_loaded === true
             );
 
-            console.log(' [mlApi] Health check result:', {
+            console.log('📊 [mlApi] Health check result:', {
                 isHealthy,
                 status: response.data.status,
                 modelLoaded: response.data.model_loaded,
@@ -230,7 +230,7 @@ export const mlApi = {
             if (isHealthy) {
                 console.log(' [mlApi] ML API is HEALTHY and model is LOADED');
             } else {
-                console.warn(' [mlApi] ML API responded but:', {
+                console.warn('️ [mlApi] ML API responded but:', {
                     status: response.data.status,
                     modelLoaded: response.data.model_loaded
                 });
@@ -246,12 +246,12 @@ export const mlApi = {
             } else if (error.code === 'ETIMEDOUT') {
                 console.error(' [mlApi] Request timed out');
             } else if (error.response) {
-                console.error(' [mlApi] Server error:', {
+                console.error('️ [mlApi] Server error:', {
                     status: error.response.status,
                     data: error.response.data
                 });
             } else {
-                console.error(' [mlApi] Network error:', error.message);
+                console.error('️ [mlApi] Network error:', error.message);
             }
 
             return false;

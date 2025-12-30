@@ -1,6 +1,6 @@
 // src/pages/Game.tsx
-import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { CircularProgress, Typography, Button, Alert } from "@mui/material";
+import { useParams, useNavigate } from "react-router-dom";
+import { CircularProgress, Typography, Button, Alert, TextField, Box, Paper } from "@mui/material";
 import { useEffect, useState } from "react";
 
 import { useGame } from "../hooks/useGame";
@@ -12,22 +12,16 @@ import MoveSuggestionDisplay from "../components/MoveSuggestion";
 export default function GamePage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const location = useLocation();
-    const { state, makeMove, setInitialState, mlSuggestion, mlAvailable } = useGame(id || null);
+    const { state, makeMove, createGame, loading, gameExists, mlSuggestion, mlAvailable } = useGame(id || null);
 
     const [gameOver, setGameOver] = useState(false);
     const [endTime, setEndTime] = useState<number | null>(null);
 
-    // Initialize state from navigation if available - ONLY ONCE
-    useEffect(() => {
-        const navigationState = location.state as { initialGameState?: any };
-        if (navigationState?.initialGameState && !state) {
-            // Only set if we don't have state yet
-            console.log("Setting initial state from navigation");
-            setInitialState?.(navigationState.initialGameState);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Empty deps - only run once on mount
+    // Form state for creating game
+    const [player1Id, setPlayer1Id] = useState("");
+    const [player2Id, setPlayer2Id] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [createError, setCreateError] = useState("");
 
     // Update body class based on current player
     useEffect(() => {
@@ -65,12 +59,115 @@ export default function GamePage() {
         navigate("/");
     };
 
+    const handleCreateGame = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!player1Id.trim() || !player2Id.trim()) {
+            setCreateError("Both player IDs are required");
+            return;
+        }
+
+        if (!id) {
+            setCreateError("Game ID not found in URL");
+            return;
+        }
+
+        setCreating(true);
+        setCreateError("");
+
+        try {
+            await createGame(id, player1Id.trim(), player2Id.trim());
+        } catch (error: any) {
+            console.error("Error creating game:", error);
+            setCreateError(error.response?.data?.message || "Failed to create game. Please try again.");
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    // Loading state
+    if (loading) {
+        return (
+            <div className="game-container">
+                <CircularProgress className="enhanced-spinner" size={60} />
+                <Typography sx={{ mt: 2, color: 'white' }}>
+                    Loading game...
+                </Typography>
+            </div>
+        );
+    }
+
+    // Game doesn't exist - show form to create it
+    if (!gameExists) {
+        return (
+            <div className="home-container">
+                <div className="home-card">
+                    <Typography variant="h1" className="home-title">
+                        Connect 4
+                    </Typography>
+                    <Typography variant="h6" className="home-subtitle">
+                        Create Game: {id}
+                    </Typography>
+
+                    <Box component="form" onSubmit={handleCreateGame} sx={{ mt: 3 }}>
+                        <TextField
+                            fullWidth
+                            label="Player 1 ID"
+                            value={player1Id}
+                            onChange={(e) => setPlayer1Id(e.target.value)}
+                            disabled={creating}
+                            sx={{ mb: 2 }}
+                            required
+                        />
+
+                        <TextField
+                            fullWidth
+                            label="Player 2 ID"
+                            value={player2Id}
+                            onChange={(e) => setPlayer2Id(e.target.value)}
+                            disabled={creating}
+                            sx={{ mb: 3 }}
+                            required
+                        />
+
+                        {createError && (
+                            <Alert severity="error" sx={{ mb: 2 }}>
+                                {createError}
+                            </Alert>
+                        )}
+
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            className="enhanced-button"
+                            fullWidth
+                            disabled={creating}
+                        >
+                            {creating ? "Creating Game..." : "Create Game"}
+                        </Button>
+
+                        <Button
+                            variant="outlined"
+                            onClick={() => navigate("/")}
+                            fullWidth
+                            sx={{ mt: 2 }}
+                            disabled={creating}
+                        >
+                            Back to Home
+                        </Button>
+                    </Box>
+                </div>
+            </div>
+        );
+    }
+
+    // Game exists - show game board
     if (!state) {
         return (
             <div className="game-container">
                 <CircularProgress className="enhanced-spinner" size={60} />
-                <Typography sx={{ mt: 2 }}>
-                    Loading game...
+                <Typography sx={{ mt: 2, color: 'white' }}>
+                    Loading game state...
                 </Typography>
             </div>
         );
@@ -89,7 +186,7 @@ export default function GamePage() {
                         severity="info"
                         sx={{ mt: 2, maxWidth: 600, mx: 'auto' }}
                     >
-                        💡 ML API not available - move suggestions disabled.
+                         ML API not available - move suggestions disabled.
                         Start the ML API at localhost:8001 to enable AI analysis.
                     </Alert>
                 )}
@@ -113,6 +210,7 @@ export default function GamePage() {
             <Board
                 board={state.board}
                 onColumnClick={makeMove}
+                disabled={state.status !== "in_progress"}
             />
 
             <GameOverModal
@@ -123,12 +221,6 @@ export default function GamePage() {
                 onClose={() => setGameOver(false)}
                 onRestart={restartGame}
             />
-
-            {state.config.player2_type === "cpu" && state.current_player === "player2" && state.status === "in_progress" && (
-                <Typography sx={{ mt: 2, textAlign: "center", fontStyle: "italic" }}>
-                    ⏳ Waiting for AI move... (AI service must be running)
-                </Typography>
-            )}
         </div>
     );
 }
