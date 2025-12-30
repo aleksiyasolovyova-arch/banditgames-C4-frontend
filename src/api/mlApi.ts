@@ -21,7 +21,12 @@ interface PredictionResponse {
     inference_time_ms?: number;
     model_version: string;
 }
-
+    interface WinProbResponse {
+  win: number;
+  draw: number;
+  loss: number;
+  model_version: string;
+}
 /**
  * Convert frontend board format to ML API format
  * Handles multiple representations:
@@ -55,6 +60,8 @@ function convertBoardToNumeric(board: any[][]): number[][] {
 
     return numericBoard;
 }
+
+
 
 /**
  * Get legal moves from board state
@@ -199,62 +206,48 @@ export const mlApi = {
         }
     },
 
+async getWinProbabilityExample(
+  board: any[][],
+  moveIndex: number
+): Promise<WinProbResponse> {
+  const numericBoard = board.map(row =>
+    row.map(cell =>
+      cell === 'X' || cell === 1 ? 1 :
+      cell === 'O' || cell === 2 ? 2 : 0
+    )
+  );
+
+  const payload = {
+    board_before: numericBoard,
+    policy: [0.1, 0.1, 0.15, 0.25, 0.15, 0.15, 0.1],   // hard-coded
+    q_values: [0.0, 0.1, 0.05, 0.2, 0.1, 0.05, 0.0], // hard-coded
+    move_index: moveIndex
+  };
+
+  const res = await axios.post(
+    `${ML_API_URL}/predict/win-probability`,
+    payload,
+    { timeout: 5000 }
+  );
+
+  return res.data;
+},
+
+
     /**
      * Check if ML API is available and has a model loaded
      *
      * @returns true if API is healthy and model is loaded, false otherwise
      */
-    async checkHealth(): Promise<boolean> {
-        console.log('🔍 [mlApi.checkHealth] START');
-        console.log('🌐 [mlApi] Checking:', `${ML_API_URL}/health`);
+async checkHealth(): Promise<boolean> {
+    try {
+        const response = await axios.get(`${ML_API_URL}/health`, {
+            timeout: 2000
+        });
 
-        try {
-            const response = await axios.get(`${ML_API_URL}/health`, {
-                timeout: 2000
-            });
-
-            console.log(' [mlApi] Response received:', response.data);
-
-            const isHealthy = (
-                response.data.status === 'healthy' &&
-                response.data.model_loaded === true
-            );
-
-            console.log('📊 [mlApi] Health check result:', {
-                isHealthy,
-                status: response.data.status,
-                modelLoaded: response.data.model_loaded,
-                currentVersion: response.data.current_version
-            });
-
-            if (isHealthy) {
-                console.log(' [mlApi] ML API is HEALTHY and model is LOADED');
-            } else {
-                console.warn('️ [mlApi] ML API responded but:', {
-                    status: response.data.status,
-                    modelLoaded: response.data.model_loaded
-                });
-            }
-
-            return isHealthy;
-
-        } catch (error: any) {
-            console.error(' [mlApi.checkHealth] ERROR');
-
-            if (error.code === 'ECONNREFUSED') {
-                console.error(' [mlApi] Connection refused - is ML API running?');
-            } else if (error.code === 'ETIMEDOUT') {
-                console.error(' [mlApi] Request timed out');
-            } else if (error.response) {
-                console.error('️ [mlApi] Server error:', {
-                    status: error.response.status,
-                    data: error.response.data
-                });
-            } else {
-                console.error('️ [mlApi] Network error:', error.message);
-            }
-
-            return false;
-        }
+        return response.data.policy_loaded === true;
+    } catch {
+        return false;
     }
+}
 };

@@ -14,6 +14,7 @@ interface GameState {
     moveCount?: number;
 }
 
+
 interface MoveSuggestion {
     move: number;
     confidence: number;
@@ -74,6 +75,15 @@ export function useGame(gameId: string | null) {
         isLoading: false,
         playerColor: null
     });
+
+      const [winProb, setWinProb] = useState<{
+    win: number;
+    draw: number;
+    loss: number;
+  } | null>(null);
+
+  const [winProbLoading, setWinProbLoading] = useState(false);
+  const [winProbMove, setWinProbMove] = useState<number | null>(null);
     const [mlAvailable, setMlAvailable] = useState<boolean>(false);
 
     const moveStartTimeRef = useRef<number | null>(null);
@@ -256,6 +266,9 @@ export function useGame(gameId: string | null) {
         // SAVE INFO ABOUT WHO IS MAKING THE MOVE
         const playerMakingMove = state.current_player;
         const columnPlayed = col;
+        setWinProb(null);
+        setWinProbMove(null);
+
 
         console.log(' [makeMove] Move details:', {
             column: col,
@@ -307,6 +320,28 @@ export function useGame(gameId: string | null) {
                 });
             }
 
+              try {
+    setWinProbLoading(true);
+    setWinProbMove(columnPlayed);
+
+    const result = await mlApi.getWinProbabilityExample(
+      boardFromBackend,
+      columnPlayed
+    );
+
+    setWinProb({
+      win: result.win,
+      draw: result.draw,
+      loss: result.loss
+    });
+  } catch (err) {
+    console.error("Win probability failed:", err);
+    setWinProb(null);
+  } finally {
+    setWinProbLoading(false);
+  }
+
+
             // Reset timer for next move
             if (mappedState.status === "in_progress") {
                 moveStartTimeRef.current = Date.now();
@@ -328,6 +363,9 @@ export function useGame(gameId: string | null) {
         createGame,
         makeMove,
         mlSuggestion,
-        mlAvailable
+        mlAvailable,
+        winProb,
+        winProbLoading,
+        winProbMove
     };
 }

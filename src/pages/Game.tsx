@@ -2,17 +2,18 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { CircularProgress, Typography, Button, Alert, TextField, Box, Paper } from "@mui/material";
 import { useEffect, useState } from "react";
-
 import { useGame } from "../hooks/useGame";
 import Board from "../components/Board";
 import GameInfo from "../components/GameInfo";
 import GameOverModal from "../components/GameOverModal";
 import MoveSuggestionDisplay from "../components/MoveSuggestion";
+import WinProbabilityDisplay from "../components/WinProbabilityDisplay";
+
 
 export default function GamePage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { state, makeMove, createGame, loading, gameExists, mlSuggestion, mlAvailable } = useGame(id || null);
+    const { state, makeMove, createGame, loading, gameExists, mlSuggestion, mlAvailable, winProbLoading, winProbMove, winProb } = useGame(id || null);
 
     const [gameOver, setGameOver] = useState(false);
     const [endTime, setEndTime] = useState<number | null>(null);
@@ -195,17 +196,41 @@ export default function GamePage() {
             <GameInfo state={state} />
 
             {/* ML Move Suggestion Display */}
-            {mlAvailable && mlSuggestion.playerColor && (
-                <div style={{ maxWidth: 600, margin: '0 auto' }}>
-                    <MoveSuggestionDisplay
-                        lastMove={mlSuggestion.lastMove}
-                        suggestedMove={mlSuggestion.suggestedMove}
-                        topMoves={mlSuggestion.topMoves}
-                        isLoading={mlSuggestion.isLoading}
-                        playerColor={mlSuggestion.playerColor}
-                    />
-                </div>
-            )}
+{mlAvailable && (
+  <Box
+    sx={{
+      display: "grid",
+      gridTemplateColumns: {
+        xs: "1fr",          // mobile: stacked
+        md: "1.2fr 0.8fr"   // desktop: side-by-side
+      },
+      gap: 3,
+      width: "100%",
+      maxWidth: "1200px",
+      mx: "auto",
+      my: 3
+    }}
+  >
+    {mlSuggestion.playerColor && (
+      <MoveSuggestionDisplay
+        lastMove={mlSuggestion.lastMove}
+        suggestedMove={mlSuggestion.suggestedMove}
+        topMoves={mlSuggestion.topMoves}
+        isLoading={mlSuggestion.isLoading}
+        playerColor={mlSuggestion.playerColor}
+      />
+    )}
+
+    {winProb && (
+      <WinProbabilityDisplay
+        probabilities={winProb}
+        isLoading={winProbLoading}
+        moveIndex={winProbMove}
+      />
+    )}
+  </Box>
+)}
+
 
             <Board
                 board={state.board}
